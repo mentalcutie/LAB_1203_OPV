@@ -122,7 +122,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>C:\OPENCV\opencv library\install\x64\vc16\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opencv_core4120d.lib;opencv_highgui4120d.lib;opencv_imgcodecs4120d.lib;opencv_imgproc4120d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_core4120d.lib;opencv_highgui4120d.lib;opencv_imgcodecs4120d.lib;opencv_imgproc4120d.lib;opencv_videoio4120d.lib;opencv_features2d4120d.lib;opencv_calib3d4120d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

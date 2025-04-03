@@ -1,61 +1,84 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 
-int main() {
-    // Загрузка изображения
-    cv::Mat src = cv::imread("shapes.jpg");
-    if (src.empty()) {
-        std::cerr << "Ошибка загрузки изображения!" << std::endl;
+using namespace cv;
+using namespace std;
+
+int main(int argc, char** argv) {
+    string videoPath = "video.mp4";
+    VideoCapture cap(videoPath);
+
+    if (!cap.isOpened()) {
+        cout << "Ошибка: Не удалось открыть видеофайл." << endl;
         return -1;
     }
 
-    // Преобразование в оттенки серого
-    cv::Mat gray;
-    cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+    while (true) {
+        Mat frame;
+        cap >> frame; // Захватываем кадр за кадром
 
-    // Усиленное сглаживание
-    cv::Mat blurred;
-    cv::GaussianBlur(gray, blurred, cv::Size(1, 1), 2.0);
+        if (frame.empty()) {
+            cout << "Конец видео." << endl;
+            break;
+        }
 
-    // Обнаружение краёв
-    cv::Mat edges;
-    cv::Canny(blurred, edges, 20, 120);
+        // Преобразуем кадр в оттенки серого для обнаружения контуров
+        Mat gray;
+        cvtColor(frame, gray, COLOR_BGR2GRAY);
 
-    // Морфологическое закрытие для сглаживания
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
-    cv::morphologyEx(edges, edges, cv::MORPH_CLOSE, kernel);
+        // Применяем размытие Гаусса для уменьшения шума
+        Mat blurred;
+        GaussianBlur(gray, blurred, Size(5, 5), 0);
 
-    // Поиск контуров
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(edges, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        // Выполняем обнаружение краев
+        Mat edges;
+        Canny(blurred, edges, 20, 150);
 
-    // Создание выходного изображения
-    cv::Mat output = cv::Mat::zeros(src.size(), src.type());
+        // Находим контуры
+        vector<vector<Point>> contours;
+        vector<Vec4i> hierarchy;
+        findContours(edges, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
-    // Обработка контуров
-    for (size_t i = 0; i < contours.size(); i++) {
-        double area = cv::contourArea(contours[i]);
-        if (area > 200) { // Фильтрация мелких шумов
-            std::vector<cv::Point> approx;
-            cv::approxPolyDP(contours[i], approx, 0.02 * cv::arcLength(contours[i], true), true);
+        // Обрабатываем каждый контур
+        for (size_t i = 0; i < contours.size(); i++) {
+            // Аппроксимируем контур в многоугольник
+            vector<Point> approx;
+            approxPolyDP(contours[i], approx, arcLength(contours[i], true) * 0.01, true);
 
-            std::string shapeName;
-            if (approx.size() == 3) shapeName = "triangle";
-            else if (approx.size() == 4) shapeName = "square";
-            else if (approx.size() > 4) shapeName = "circle";
-            else continue;
+            // Проверяем, имеет ли контур 4 вершины
+            if (approx.size() == 4) {
+                // Вычисляем площадь и периметр
+                double area = contourArea(contours[i]);
+                double perimeter = arcLength(contours[i], true);
+                double ratio = sqrt(area) / (perimeter / 4.0); // Соотношение для квадрата
 
-            cv::Moments m = cv::moments(contours[i]);
-            cv::Point center(m.m10 / m.m00, m.m01 / m.m00);
+                // Пороги для квадрата с учетом площади и соотношения
+                if (ratio > 0.9 && ratio < 1.1 && area > 5000 && area < 55000) { // Ограничение площади для меньшего квадрата
+                    // Получаем прямоугольник
+                    Rect rect = boundingRect(contours[i]);
 
-            cv::drawContours(output, contours, (int)i, cv::Scalar(255, 0, 0), 2);
-            cv::putText(output, shapeName, center - cv::Point(20, -10),
-                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+                    // Рисуем зеленый прямоугольник
+                    rectangle(frame, rect, Scalar(0, 255, 0), 2);
+
+                    // Добавляем метку "Square"
+                    putText(frame, "Square", Point(rect.x, rect.y - 10),
+                        FONT_HERSHEY_SIMPLEX, 0.9, Scalar(0, 255, 0), 2);
+                }
+            }
+        }
+
+        // Отображаем результат
+        imshow("Обнаружение квадрата", frame);
+
+        // Прерываем цикл по нажатию клавиши 'q'
+        if (waitKey(10) == 'q') {
+            break;
         }
     }
 
-    // Показ результата
-    cv::imshow("Contours", output);
-    cv::waitKey(0);
+    // Освобождаем объект захвата видео и закрываем окна
+    cap.release();
+    destroyAllWindows();
+
     return 0;
 }
