@@ -62,8 +62,14 @@ int main() {
     cout << "Время создания фрактала: " << elapsedTime.count() << " мс" << endl;
     cout << "----------------------------------" << endl;
 
-    // Сохраняем изображение
-    imwrite("../../results/sierpinski_fractal.png", img);
+    // Сохраняем изображение в текущей директории
+    string filename = "sierpinski_fractal.png";
+    if (imwrite(filename, img)) {
+        cout << "Изображение успешно сохранено как " << filename << endl;
+    }
+    else {
+        cout << "Ошибка сохранения изображения!" << endl;
+    }
 
     // Отображаем изображение
     imshow("Sierpinski Fractal", img);
