@@ -1,93 +1,73 @@
-#include <opencv2/opencv.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/calib3d.hpp>
-#include <vector>
 #include <iostream>
+#include <opencv2/opencv.hpp>
+#include <omp.h>
+#include <chrono>
+#include <cmath>
 
-int main() {
-    // Шаг 1: Загрузка изображений
-    std::vector<cv::Mat> images;
-    images.push_back(cv::imread("image1.jpg"));
-    images.push_back(cv::imread("image2.jpg"));
+using namespace cv;
+using namespace std;
+using namespace chrono;
 
-    // Проверка на успешную загрузку изображений
-    if (images[0].empty() || images[1].empty()) {
-        std::cerr << "Ошибка: не удалось загрузить изображения." << std::endl;
-        return -1;
-    }
+const int IMAGE_DIMENSION = 729;  // Размер изображения
 
-    // Шаг 2: Обнаружение ключевых точек и вычисление дескрипторов
-    cv::Ptr<cv::FeatureDetector> detector = cv::ORB::create();
-    cv::Ptr<cv::DescriptorExtractor> extractor = cv::ORB::create();
+// Функция для рисования фрактала
+void generateFractal(Mat& image, int x, int y, int size, int level) {
+    if (level <= 0) return;
 
-    std::vector<cv::KeyPoint> keypoints1, keypoints2;
-    cv::Mat descriptors1, descriptors2;
+    int subSize = size / 3;  // Размер меньших квадратов
 
-    detector->detect(images[0], keypoints1);
-    detector->detect(images[1], keypoints2);
-    extractor->compute(images[0], keypoints1, descriptors1);
-    extractor->compute(images[1], keypoints2, descriptors2);
+    // Закрашиваем центральный квадрат
+    rectangle(image, Point(x + subSize, y + subSize), Point(x + 2 * subSize, y + 2 * subSize), Scalar(255, 255, 255), FILLED);
 
-    // Шаг 3: Сопоставление дескрипторов
-    cv::BFMatcher matcher(cv::NORM_HAMMING);
-    std::vector<std::vector<cv::DMatch>> matches_knn;
-    matcher.knnMatch(descriptors1, descriptors2, matches_knn, 2);
-
-    // Шаг 4: Фильтрация совпадений с помощью Ratio Test
-    std::vector<cv::DMatch> good_matches;
-    for (const auto& m : matches_knn) {
-        if (m[0].distance < 0.7 * m[1].distance) {
-            good_matches.push_back(m[0]);
+    // Параллельный вызов для каждого из 8 подрекурсивных квадратов
+#pragma omp parallel for collapse(2)
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            if (i != 1 || j != 1) {  // Пропускаем центральный квадрат
+                generateFractal(image, x + i * subSize, y + j * subSize, subSize, level - 1);
+            }
         }
     }
+}
 
-    // Шаг 5: Вычисление матрицы гомографии с использованием RANSAC
-    std::vector<cv::Point2f> points1, points2;
-    for (const auto& m : good_matches) {
-        points1.push_back(keypoints1[m.queryIdx].pt);
-        points2.push_back(keypoints2[m.trainIdx].pt);
+int main() {
+    int threadsCount = 4;  // Количество потоков для OpenMP
+    omp_set_num_threads(threadsCount);
+
+    int recursionDepth;
+    cout << "Введите глубину рекурсии: ";
+    cin >> recursionDepth;
+
+    // Параллельное выполнение блока вывода
+#pragma omp parallel
+    {
+#pragma omp single
+        std::cout << "Используемое количество потоков: " << omp_get_num_threads() << std::endl;
     }
 
-    cv::Mat homography = cv::findHomography(points2, points1, cv::RANSAC);
+    // Создание черного изображения
+    Mat img(IMAGE_DIMENSION, IMAGE_DIMENSION, CV_8UC3, Scalar(0, 0, 0));
 
-    // Шаг 6: Сшивание изображений
-    // Определяем размер панорамы
-    int width = images[0].cols + images[1].cols;
-    int height = std::max(images[0].rows, images[1].rows);
-    cv::Mat panorama = cv::Mat::zeros(height, width, images[0].type());
+    // Засекаем время построения фрактала
+    auto startTime = high_resolution_clock::now();
 
-    // Копируем первое изображение в панораму
-    images[0].copyTo(panorama(cv::Rect(0, 0, images[0].cols, images[0].rows)));
+    // Рисуем фрактал
+    generateFractal(img, 0, 0, IMAGE_DIMENSION, recursionDepth);
 
-    // Преобразуем и накладываем второе изображение
-    cv::Mat warped;
-    cv::warpPerspective(images[1], warped, homography, cv::Size(width, height));
-    warped.copyTo(panorama, warped > 0); // Накладываем только непустые пиксели
+    // Засекаем время завершения
+    auto endTime = high_resolution_clock::now();
+    auto elapsedTime = duration_cast<milliseconds>(endTime - startTime);
 
-    // Шаг 7: Обрезка лишних черных областей
-    // Создаем маску для поиска непустых пикселей
-    cv::Mat mask;
-    cv::cvtColor(panorama, mask, cv::COLOR_BGR2GRAY);
-    cv::threshold(mask, mask, 1, 255, cv::THRESH_BINARY);
+    // Выводим время построения
+    cout << "Время создания фрактала: " << elapsedTime.count() << " мс" << endl;
+    cout << "----------------------------------" << endl;
 
-    // Находим контуры
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    // Сохраняем изображение
+    imwrite("../../results/sierpinski_fractal.png", img);
 
-    // Определяем ограничивающий прямоугольник для всех контуров
-    cv::Rect bounding_rect;
-    for (const auto& contour : contours) {
-        cv::Rect rect = cv::boundingRect(contour);
-        bounding_rect = bounding_rect | rect;
-    }
-
-    // Обрезаем изображение
-    cv::Mat cropped_panorama = panorama(bounding_rect);
-
-    // Шаг 8: Сохранение результата
-    cv::imwrite("cropped_panorama.jpg", cropped_panorama);
-
-    std::cout << "Панорама успешно сохранена как 'cropped_panorama.jpg'." << std::endl;
+    // Отображаем изображение
+    imshow("Sierpinski Fractal", img);
+    waitKey(0);
 
     return 0;
 }
